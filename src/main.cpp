@@ -1,53 +1,98 @@
-#include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
-#include <WiFiUdp.h>
+//#include <SocketIOclient.h>
+//#include <WebSockets.h>
+//#include <WebSockets4WebServer.h>
+//#include <WebSocketsClient.h>
+//#include <WebSocketsVersion.h>
+
+// Import required libraries
+//#ifdef ESP32
+//#include <WiFi.h>
+//#include <ESPAsyncWebServer.h>
+//#else
+
+//#include <Arduino.h>
 #include <ArduinoOTA.h>
 
-#define ledPin LED_BUILTIN
+#include <ESP8266WiFi.h>
+#include <ESP8266WiFiMulti.h>
 
-#ifndef STASSID
-#define STASSID "hfs21"
-#define STAPSK  "1234abcD"
-#endif
+#include <Hash.h>
 
-const char* ssid = STASSID;
-const char* password = STAPSK;
+#include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
 
-void setup() {
-  pinMode(ledPin, OUTPUT);
-  Serial.begin(115200);
-  Serial.println("Booting");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
+//#endif
+
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+// Data wire is connected to GPIO 4
+#define ONE_WIRE_BUS 4
+
+// Setup a oneWire instance to communicate with any OneWire devices
+OneWire oneWire(ONE_WIRE_BUS);
+
+// Pass our oneWire reference to Dallas Temperature sensor
+DallasTemperature sensors(&oneWire);
+
+//
+const byte led = LED_BUILTIN;
+ESP8266WiFiMulti wifiMulti;
+
+// Variables to store temperature values
+String temperatureF = "";
+String temperatureC = "";
+String temperatureC1 = "";
+String temperatureC2 = "";
+
+// Timer variables
+unsigned long lastTime = 0;
+unsigned long timerDelay = 5000;
+
+// Replace with your network credentials
+const char* ssid = "REPLACE_WITH_YOUR_SSID";
+const char* password = "REPLACE_WITH_YOUR_PASSWORD";
+
+// Create AsyncWebServer object on port 80
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+float readDSTemperatureC(int idx) {
+  // Call sensors.requestTemperatures() to issue a global temperature and Requests to all devices on the bus
+  sensors.requestTemperatures();
+  float tempC = sensors.getTempCByIndex(idx);
+
+  if (tempC == -127.00) {
+    Serial.println("Failed to read from DS18B20 sensor");
+  } else {
+    Serial.print("Temperature Celsius: ");
+    Serial.println(tempC);
   }
+  return tempC;
+}
 
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
 
-  // Hostname defaults to esp8266-[ChipID]
-  // ArduinoOTA.setHostname("myesp8266");
+// Replaces placeholder with DS18B20 values
+String processor(const String& var) {
+  //Serial.println(var);
+  if (var == "TEMPERATUREC1") {
+    return temperatureC1;
+  }
+  else if (var == "TEMPERATUREC2") {
+    return temperatureC2;
+  }
+  else if (var == "TEMPERATUREF") {
+    return temperatureF;
+  }
+  return String();
+}
 
-  // No authentication by default
-  // ArduinoOTA.setPassword("admin");
-
-  // Password can be set with it's md5 value as well
-  // MD5(admin) = 21232f297a57a5a743894a0e4a801fc3
-  // ArduinoOTA.setPasswordHash("21232f297a57a5a743894a0e4a801fc3");
+void initOTA() {
+  ArduinoOTA.setHostname("ESP8266");
+  //ArduinoOTA.setPassword("esp8266");
 
   ArduinoOTA.onStart([]() {
-    String type;
-    if (ArduinoOTA.getCommand() == U_FLASH) {
-      type = "sketch";
-    } else { // U_FS
-      type = "filesystem";
-    }
-
-    // NOTE: if updating FS this would be the place to unmount FS using FS.end()
-    Serial.println("Start updating " + type);
+    Serial.println("Start");
   });
   ArduinoOTA.onEnd([]() {
     Serial.println("\nEnd");
@@ -57,48 +102,205 @@ void setup() {
   });
   ArduinoOTA.onError([](ota_error_t error) {
     Serial.printf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) {
-      Serial.println("Auth Failed");
-    } else if (error == OTA_BEGIN_ERROR) {
-      Serial.println("Begin Failed");
-    } else if (error == OTA_CONNECT_ERROR) {
-      Serial.println("Connect Failed");
-    } else if (error == OTA_RECEIVE_ERROR) {
-      Serial.println("Receive Failed");
-    } else if (error == OTA_END_ERROR) {
-      Serial.println("End Failed");
-    }
+    if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+    else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+    else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+    else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+    else if (error == OTA_END_ERROR) Serial.println("End Failed");
   });
   ArduinoOTA.begin();
-  Serial.println("Ready");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("OTA ready");
 }
 
+void connectWifi() {
+  // Connect to Wi-Fi
+  wifiMulti.addAP("HierKummstDuNetRein", "2649828801618895");
+  Serial.println("Connecting ...");
+  
+  pinMode(led, OUTPUT);
+  digitalWrite(led, 1);
 
-unsigned long last = millis();
-unsigned long interval = 1000;
-bool hilo = HIGH;
-
-void loop() {
-
-  ArduinoOTA.handle();
-  if (millis()-last > interval){
-    hilo = !hilo;
-    digitalWrite(ledPin, hilo);
-    last += interval;
+  while (wifiMulti.run() != WL_CONNECTED) { // Wait for the Wi-Fi to connect
+    delay(250);
+    digitalWrite(led, !digitalRead(led));  // Change the state of the LED
+    Serial.print('.');
   }
 }
 
-// void loop() {
-//   // put your main code here, to run repeatedly:
-//   digitalWrite(ledPin, LOW);
-//   Serial.println("LED is ON!!!");
-//   delay(1000);
+DeviceAddress da1;
+DeviceAddress da2;
+float tempC1 = 0.0;
+String message = "";
 
-//   digitalWrite(ledPin, HIGH);
-//   Serial.println("LED is OFF!!!");
-//   delay(1000);
-// }
+const char index_html[] PROGMEM = R"rawliteral(
+<!DOCTYPE HTML><html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+  <style>
+    html {
+     font-family: Arial;
+     display: inline-block;
+     margin: 0px auto;
+     text-align: center;
+    }
+    h2 { font-size: 3.0rem; }
+    p { font-size: 3.0rem; }
+    .units { font-size: 1.2rem; }
+    .ds-labels{
+      font-size: 1.5rem;
+      vertical-align:middle;
+      padding-bottom: 15px;
+    }
+  </style>
+</head>
+<body>
+  <h2>ESP DS18B20 Server</h2>
+  <p>
+    <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
+    <span class="ds-labels">Temperature Sensor 1</span> 
+    <span id="temperaturec1">%TEMPERATUREC1%</span>
+    <sup class="units">&deg;C</sup>
+  </p>
+  <p>
+    <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
+    <span class="ds-labels">Temperature Sensor 2</span> 
+    <span id="temperaturec2">%TEMPERATUREC2%</span>
+    <sup class="units">&deg;C</sup>
+  </p>
+</body>
+
+<script>
+var gateway = `ws://${window.location.hostname}/ws`;
+var websocket;
+
+function onOpen(event) {
+  console.log('Connection opened');
+}
+
+function onClose(event) {
+  console.log('Connection closed');
+  setTimeout(initWebSocket, 2000);
+}
+
+function onMessage(event) {
+  if (event.data.startsWith('TEMP')){
+    const tokens = event.data.split(':');
+    document.getElementById('temperaturec1').innerHTML = tokens[1];      
+    document.getElementById('temperaturec2').innerHTML = tokens[2];      
+  }
+}
+
+function initWebSocket() {
+  console.log('Trying to open a WebSocket connection...');
+  websocket = new WebSocket(gateway);
+  websocket.onopen    = onOpen;
+  websocket.onclose   = onClose;
+  websocket.onmessage = onMessage; // <-- add this line
+}
 
 
+/*
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("temperaturec1").innerHTML = this.responseText;
+    }
+  };
+  xhttp.open("GET", "/temperaturec1", true); 
+  xhttp.send();
+}, 5000) ;
+
+setInterval(function ( ) {
+  var xhttp = new XMLHttpRequest();
+  xhttp.onreadystatechange = function() {
+    if (this.readyState == 4 && this.status == 200) {
+      document.getElementById("temperaturec2").innerHTML = this.responseText;
+    }
+  };
+  xhttp.open("GET", "/temperaturec2", true);
+  xhttp.send();
+}, 5000) ;
+*/
+
+window.onload = function () {
+  initWebSocket();
+}
+
+</script>
+</html>
+)rawliteral";
+
+void initSensors(){
+  // Start up the DS18B20 library
+  sensors.begin();
+  sensors.getAddress(da1, 0);
+  sensors.getAddress(da2, 1);
+
+  sensors.setResolution(da1, 9);
+  sensors.setResolution(da2, 11);
+
+  float temp =  readDSTemperatureC(0);
+  tempC1 = temp;
+  temperatureC1 = String(tempC1);
+  temperatureC2 = String(readDSTemperatureC(1));
+}
+
+void setup() {
+  // Serial port for debugging purposes
+  Serial.begin(115200);
+  Serial.println();
+
+  initSensors();
+  connectWifi();
+  initOTA();
+
+  // Print ESP Local IP Address
+  Serial.println(WiFi.SSID());
+  Serial.println(WiFi.localIP());
+
+
+  // Route for root / web page
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/html", index_html, processor);
+  });
+  server.on("/temperaturec", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/plain", temperatureC1.c_str());
+  });
+  server.on("/temperaturec1", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/plain", temperatureC1.c_str());
+  });
+  server.on("/temperaturec2", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/plain", temperatureC2.c_str());
+  });
+  server.on("/temperaturef", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send_P(200, "text/plain", temperatureF.c_str());
+  });
+  // Start server
+  server.begin();
+}
+
+unsigned long previousTime = millis();
+const unsigned long interval = 1000;
+
+void loop() {
+  ArduinoOTA.handle();
+  unsigned long diff = millis() - previousTime;
+  if (diff > interval) {
+    digitalWrite(led, !digitalRead(led));  // Change the state of the LED
+    previousTime += diff;
+  }
+
+  if ((millis() - lastTime) > timerDelay) {
+    float temp =  readDSTemperatureC(0);
+    tempC1 = temp;
+    temperatureC1 = String(tempC1);
+    temperatureC2 = String(readDSTemperatureC(1));
+    if (temp != tempC1) {
+      String message = "TEMP:" + temperatureC1 + ":" + temperatureC2;
+      ws.textAll(message);
+    }
+    lastTime = millis();
+  }
+}
