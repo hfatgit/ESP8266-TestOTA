@@ -1,0 +1,85 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
+  <link rel="stylesheet" type="text/css" href="server.css">
+  <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+</head>
+<body>
+  <h2>ESP DS18B20 Server Spiffs</h2>
+  <p>
+    <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
+    <span class="ds-labels">Temperature Sensor 1</span> 
+    <span id="temperaturec1">%TEMPERATUREC1%</span>
+    <sup class="units">&deg;C</sup>
+  </p>
+  <p>
+    <i class="fas fa-thermometer-half" style="color:#059e8a;"></i> 
+    <span class="ds-labels">Trend</span> 
+    <span id="temperaturec2"></span>
+    <sup class="units">&deg;C</sup>
+  </p>
+  <p>
+    <button id="res9" class="button">9bit</button>
+    <button id="res12" class="button">12bit</button>
+    <span class="ds-labels">Resolution</span> 
+    <span id="resolution"></span>
+    <span>bit</span>
+  </p>
+</body>
+
+<script>
+var gateway = `ws://${window.location.hostname}/ws`;
+var websocket;
+
+function onOpen(event) {
+  console.log('Connection opened');
+}
+
+function onClose(event) {
+  console.log('Connection closed');
+  setTimeout(initWebSocket, 2000);
+}
+
+function onMessage(event) {
+  const tokens = event.data.split(':');
+  if (event.data.startsWith('TEMP')){
+    $('#temperaturec1').html(tokens[1]);      
+    $('#temperaturec2').html(tokens[2]);      
+  }
+  else{
+    console.log(event);
+
+    if (event.data.startsWith('RESOL')){
+      $('#resolution').html(tokens[1]);      
+    }
+  }
+
+}
+
+function initWebSocket() {
+  console.log('Trying to open a WebSocket connection...');
+  websocket = new WebSocket(gateway);
+  websocket.onopen    = onOpen;
+  websocket.onclose   = onClose;
+  websocket.onmessage = onMessage; // <-- add this line
+}
+
+function initButtons(){
+  $("#res9").click(() => { 
+    websocket.send("SETRES:9");
+  });
+  $("#res12").click(() => { 
+    websocket.send("SETRES:12");
+  });
+}
+
+$( document ).ready(function() {
+  initWebSocket();
+  initButtons();
+});
+
+
+</script>
+</html>
